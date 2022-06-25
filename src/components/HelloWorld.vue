@@ -1,10 +1,15 @@
 <template>
-  <div id="container"></div>
+  <div id="container">
+    <div class="popup" v-if="gameOver">
+      <span>gg啦</span>
+      <button type="button" @click="restart">重新开始</button>
+    </div>
+  </div>
 </template>
 
 <script>
 import * as THREE from "three";
-import { defineComponent, watch, onMounted } from "vue";
+import { defineComponent, watch, onMounted, ref } from "vue";
 // 调色盘
 const Colors = {
   red: 0xf25346,
@@ -32,10 +37,16 @@ export default defineComponent({
       shadowLight,
       airplane,
       sky,
+      bulletsArray = [],
+      enemyArray = [],
       // bullets,
       sea;
 
     let mousePos = { x: 0, y: 0 };
+    let gameOver = ref(false)
+    function randomIntFromInterval(min, max) { // min and max included 
+      return Math.floor(Math.random() * (max - min + 1) + min)
+    }
 
     const createScene = () => {
       // Get the width and the height of the screen,
@@ -250,7 +261,7 @@ export default defineComponent({
       // and between 25 and 175 on the vertical axis,
       // depending on the mouse position which ranges between -1 and 1 on both axes;
       // to achieve that we use a normalize function (see below)
-
+      
       var targetX = normalize(mousePos.x, -1, 1, -100, 100);
       var targetY = normalize(mousePos.y, -1, 1, 25, 175);
 
@@ -258,6 +269,9 @@ export default defineComponent({
       airplane.mesh.position.y = targetY;
       airplane.mesh.position.x = targetX;
       airplane.propeller.rotation.x += 0.3;
+
+      // console.log('y', airplane.mesh.position.y)
+      // console.log('x', airplane.mesh.position.x)
     }
 
     function normalize(v, vmin, vmax, tmin, tmax) {
@@ -278,12 +292,15 @@ export default defineComponent({
 
       // render the scene
       renderer.render(scene, camera);
-
+  
       // call the loop function again
       requestAnimationFrame(loop);
     }
 
     function handleMouseMove(event) {
+      if(gameOver.value) {
+        return
+      }
       // here we are converting the mouse position value received
       // to a normalized value varying between -1 and 1;
       // this is the formula for the horizontal axis:
@@ -396,10 +413,15 @@ export default defineComponent({
           this.mesh.position.x = airplane.mesh.position.x
           this.mesh.position.y =  airplane.mesh.position.y
 
-
           this.fire = () => {
-              if(this.mesh.position.x >= WIDTH) {
-                  delete this.mesh
+              if(this.mesh.position.x >= 100) {
+                  const index = bulletsArray.indexOf(this);
+                  if (index > -1) {
+                    bulletsArray.splice(index, 1);
+                  }
+                 cancelAnimationFrame(this.animate)
+                 this.mesh.clear()
+                 return
               }
               this.mesh.position.x += 2;
               requestAnimationFrame(this.fire);
@@ -407,12 +429,124 @@ export default defineComponent({
         }
 
         setInterval(() => {
+          if( gameOver.value ) {
+            return
+          }
           let bullet = new BULLET()
           scene.add(bullet.mesh)
+          bulletsArray.push(bullet)
+
           bullet.fire()
-        }, 400)
+        }, 200)
 
         
+    }
+
+    function createEnemy() {
+        function Enemy(){
+          this.mesh = new THREE.Object3D();
+
+          const enemyOutline = new THREE.CapsuleGeometry( 2, 10, 40, 8 );
+          const enemyMaterial = new THREE.MeshPhongMaterial({
+            color: Colors.brown,
+            shading: THREE.FlatShading,
+          });
+          const enemy = new THREE.Mesh( enemyOutline, enemyMaterial);
+          enemy.rotation.z= Math.PI / 2;
+
+
+        var geomSideWing = new THREE.BoxGeometry(5, 1, 20, 1, 1, 1);
+        var matSideWing = new THREE.MeshPhongMaterial({
+          color: Colors.blue,
+          shading: THREE.FlatShading,
+        });
+        var sideWing = new THREE.Mesh(geomSideWing, matSideWing);
+        sideWing.castShadow = true;
+        sideWing.receiveShadow = true;
+        this.mesh.add(sideWing);
+
+ var geomSideWing2 = new THREE.BoxGeometry(5, 1, 10, 1, 1, 1);
+        var matSideWing2 = new THREE.MeshPhongMaterial({
+          color: Colors.blue,
+          shading: THREE.FlatShading,
+        });
+        var sideWing2 = new THREE.Mesh(geomSideWing2, matSideWing2);
+        sideWing2.castShadow = true;
+        sideWing2.receiveShadow = true;
+                sideWing2.position.set(7, 0, 0);
+
+        this.mesh.add(sideWing2);
+
+
+          enemy.castShadow = true;
+          enemy.receiveShadow = true;
+
+          this.mesh.add(enemy)
+          const y = randomIntFromInterval(20, 200)
+          this.mesh.position.y = y
+          this.mesh.position.x = 150
+          const ySpeed = randomIntFromInterval(-10, 10) / 10;
+          this.died = false
+
+          this.checkCollision = () => {
+            const top = this.mesh.position.y + 10;
+            const bottom = this.mesh.position.y - 10;
+            const left = this.mesh.position.x - 10;
+            const right = this.mesh.position.x + 10;
+            for(let i = 0 ; i < bulletsArray.length; i++) {
+              // 检查是否被子弹击中
+              if(bulletsArray[i].mesh.position.x > left && bulletsArray[i].mesh.position.x < right) {
+                if(bulletsArray[i].mesh.position.y > bottom && bulletsArray[i].mesh.position.y < top) {
+                  //  scene.delete(this.mesh)
+                  const index = enemyArray.indexOf(this);
+                  if (index > -1) {
+                    enemyArray.splice(index, 1);
+                  }
+
+                  //eslint-disable-next-line
+                  this.died = true
+                  this.mesh.clear()
+                  return;
+                }
+              }
+            }
+
+            if(airplane.mesh.position.x > left && airplane.mesh.position.x <right) {
+              if(airplane.mesh.position.y > bottom && airplane.mesh.position.y < top) {
+                // alert('Died!')
+                gameOver.value = true;
+                airplane.mesh.clear()
+              }
+            }
+          }
+    
+          this.move = () => {
+            if(this.died) {
+              return
+            }
+            if(this.mesh.position.x <= -100) {
+                  const index = enemyArray.indexOf(this);
+                  if (index > -1) {
+                    enemyArray.splice(index, 1);
+                  }
+                this.mesh.clear()
+                return
+            }
+            this.checkCollision()
+            this.mesh.position.x -= 1;
+            if(this.mesh.position.y >= 20) {
+            this.mesh.position.y += ySpeed;
+            }
+            requestAnimationFrame(this.move);
+          }
+        }
+
+        setInterval(() => {
+          let enemy = new Enemy()
+           scene.add(enemy.mesh)
+          enemyArray.push(enemy)
+           enemy.move()
+        }, 100)
     }
     onMounted(async () => {
       createScene();
@@ -425,6 +559,7 @@ export default defineComponent({
       createSea();
       createSky();
       createBullet();
+      createEnemy();
       // // start a loop that will update the objects' positions
       // // and render the scene on each frame
 
@@ -435,6 +570,10 @@ export default defineComponent({
     });
     watch(props, () => {});
     return {
+      restart: () => {
+        location.reload()
+      },
+      gameOver,
       cancelModal: () => {},
       submitForm: async () => {},
     };
@@ -446,11 +585,33 @@ export default defineComponent({
 <style scoped>
 #container {
   touch-action: none;
-
   position: absolute;
   width: 100%;
   height: 100%;
   overflow: hidden;
+  display: flex;
+    align-items: center;
+    flex-direction: column;
   background: linear-gradient(to bottom, #b7eaff 0%,#94dfff 100%);
 }
+
+.popup {
+   position: absolute;
+    top: 300px;
+    height: 100px;
+    width: 300px;
+    background: black;
+    opacity: 0.5;
+    display: flex;
+    /* flex-direction: column-reverse; */
+    align-items: center;
+    flex-direction: column;
+    /* flex: revert; */
+    justify-content: center;
+}
+
+  span {
+      color: white;
+      margin-bottom: 20px;
+  }
 </style>
